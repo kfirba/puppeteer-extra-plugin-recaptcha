@@ -19,6 +19,7 @@ export declare class RecaptchaContentScript {
     private _findVisibleIframeNodes;
     private _findVisibleIframeNodeById;
     private _hideChallengeWindowIfPresent;
+    private getClientsFromWindow;
     private getClients;
     private getVisibleIframesIds;
     private getResponseInputById;
