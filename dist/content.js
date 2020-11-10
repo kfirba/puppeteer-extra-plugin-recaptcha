@@ -103,7 +103,7 @@ class RecaptchaContentScript {
         return [...frames, ...framesInFrames];
     }
     _findVisibleIframeNodeById(id) {
-        const selectors = `iframe[src^='https://www.google.com/recaptcha/api2/anchor'][name^="a-${id || ''}"] , 
+        const selectors = `iframe[src^='https://www.google.com/recaptcha/api2/anchor'][name^="a-${id || ''}"], 
                        iframe[src^='https://www.google.com/recaptcha/enterprise/anchor'][name^="a-${id || ''}"]`;
         let frame = document.querySelector(selectors);
         if (frame) {
@@ -268,7 +268,11 @@ class RecaptchaContentScript {
                 result.error = 'No solutions provided';
                 return result;
             }
+            const attemptedCaptchaIds = this.data.captchasAttempted
+                ? this.data.captchasAttempted.map(({ id }) => id).filter(id => id)
+                : { includes: () => true }; // noop
             result.solved = this.getVisibleIframesIds()
+                .filter((id) => attemptedCaptchaIds.includes(id))
                 .map((id) => this.getClientById(id))
                 .map((client) => {
                 const solved = {

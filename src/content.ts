@@ -123,12 +123,8 @@ export class RecaptchaContentScript {
     return [...frames, ...framesInFrames]
   }
   private _findVisibleIframeNodeById(id?: string) {
-    const selectors = `iframe[src^='https://www.google.com/recaptcha/api2/anchor'][name^="a-${
-      id || ''
-    }"] , 
-                       iframe[src^='https://www.google.com/recaptcha/enterprise/anchor'][name^="a-${
-                         id || ''
-                       }"]`
+    const selectors = `iframe[src^='https://www.google.com/recaptcha/api2/anchor'][name^="a-${id || ''}"], 
+                       iframe[src^='https://www.google.com/recaptcha/enterprise/anchor'][name^="a-${id || ''}"]`
 
     let frame: HTMLIFrameElement | null = document.querySelector<
       HTMLIFrameElement
@@ -310,7 +306,12 @@ export class RecaptchaContentScript {
         return result
       }
 
+      const attemptedCaptchaIds = this.data.captchasAttempted
+        ? this.data.captchasAttempted.map(({id}) => id).filter(id => id)
+        : {includes: () => true}; // noop
+
       result.solved = this.getVisibleIframesIds()
+        .filter((id) => attemptedCaptchaIds.includes(id))
         .map((id) => this.getClientById(id))
         .map((client) => {
           const solved: types.CaptchaSolved = {

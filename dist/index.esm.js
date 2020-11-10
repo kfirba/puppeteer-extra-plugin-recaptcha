@@ -108,7 +108,7 @@ class RecaptchaContentScript {
         return [...frames, ...framesInFrames];
     }
     _findVisibleIframeNodeById(id) {
-        const selectors = `iframe[src^='https://www.google.com/recaptcha/api2/anchor'][name^="a-${id || ''}"] , 
+        const selectors = `iframe[src^='https://www.google.com/recaptcha/api2/anchor'][name^="a-${id || ''}"], 
                        iframe[src^='https://www.google.com/recaptcha/enterprise/anchor'][name^="a-${id || ''}"]`;
         let frame = document.querySelector(selectors);
         if (frame) {
@@ -273,7 +273,11 @@ class RecaptchaContentScript {
                 result.error = 'No solutions provided';
                 return result;
             }
+            const attemptedCaptchaIds = this.data.captchasAttempted
+                ? this.data.captchasAttempted.map(({ id }) => id).filter(id => id)
+                : { includes: () => true }; // noop
             result.solved = this.getVisibleIframesIds()
+                .filter((id) => attemptedCaptchaIds.includes(id))
                 .map((id) => this.getClientById(id))
                 .map((client) => {
                 const solved = {
@@ -685,10 +689,11 @@ class PuppeteerExtraPluginRecaptcha extends PuppeteerExtraPlugin {
         }
         return response;
     }
-    async enterRecaptchaSolutions(page, solutions) {
+    async enterRecaptchaSolutions(page, solutions, captchasAttempted) {
         this.debug('enterRecaptchaSolutions');
         const evaluateReturn = await page.evaluate(this._generateContentScript('enterRecaptchaSolutions', {
-            solutions
+            solutions,
+            captchasAttempted
         }));
         const response = evaluateReturn;
         response.error = response.error || response.solved.find(s => !!s.error);
@@ -698,7 +703,7 @@ class PuppeteerExtraPluginRecaptcha extends PuppeteerExtraPlugin {
         }
         return response;
     }
-    async solveRecaptchas(page) {
+    async solveRecaptchas(page, options = {}) {
         this.debug('solveRecaptchas');
         const response = {
             captchas: [],
@@ -710,11 +715,11 @@ class PuppeteerExtraPluginRecaptcha extends PuppeteerExtraPlugin {
             // If `this.opts.throwOnError` is set any of the
             // following will throw and abort execution.
             const { captchas, error: captchasError } = await this.findRecaptchas(page);
-            response.captchas = captchas;
+            response.captchas = options.filterFoundRecaptchas ? options.filterFoundRecaptchas(captchas) : captchas;
             if (captchas.length) {
                 const { solutions, error: solutionsError } = await this.getRecaptchaSolutions(response.captchas);
                 response.solutions = solutions;
-                const { solved, error: solvedError } = await this.enterRecaptchaSolutions(page, response.solutions);
+                const { solved, error: solvedError } = await this.enterRecaptchaSolutions(page, response.solutions, response.captchas);
                 response.solved = solved;
                 response.error = captchasError || solutionsError || solvedError;
             }
@@ -731,9 +736,9 @@ class PuppeteerExtraPluginRecaptcha extends PuppeteerExtraPlugin {
     _addCustomMethods(prop) {
         prop.findRecaptchas = async () => this.findRecaptchas(prop);
         prop.getRecaptchaSolutions = async (captchas, provider) => this.getRecaptchaSolutions(captchas, provider);
-        prop.enterRecaptchaSolutions = async (solutions) => this.enterRecaptchaSolutions(prop, solutions);
+        prop.enterRecaptchaSolutions = async (solutions) => this.enterRecaptchaSolutions(prop, solutions, false);
         // Add convenience methods that wraps all others
-        prop.solveRecaptchas = async () => this.solveRecaptchas(prop);
+        prop.solveRecaptchas = async (options = {}) => this.solveRecaptchas(prop, options);
     }
     async onPageCreated(page) {
         this.debug('onPageCreated', page.url());

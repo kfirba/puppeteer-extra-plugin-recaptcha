@@ -14,8 +14,8 @@ export declare class PuppeteerExtraPluginRecaptcha extends PuppeteerExtraPlugin 
     private _generateContentScript;
     findRecaptchas(page: Page | Frame): Promise<types.FindRecaptchasResult>;
     getRecaptchaSolutions(captchas: types.CaptchaInfo[], provider?: types.SolutionProvider): Promise<any>;
-    enterRecaptchaSolutions(page: Page | Frame, solutions: types.CaptchaSolution[]): Promise<types.EnterRecaptchaSolutionsResult>;
-    solveRecaptchas(page: Page | Frame): Promise<types.SolveRecaptchasResult>;
+    enterRecaptchaSolutions(page: Page | Frame, solutions: types.CaptchaSolution[], captchasAttempted: types.CaptchaInfo[] | false): Promise<types.EnterRecaptchaSolutionsResult>;
+    solveRecaptchas(page: Page | Frame, options?: types.SolveRecaptchasOptions): Promise<types.SolveRecaptchasResult>;
     private _addCustomMethods;
     onPageCreated(page: Page): Promise<void>;
     /** Add additions to already existing pages and frames */

@@ -10,13 +10,17 @@ declare global {
         };
     }
 }
+export declare type CaptchasCallback = (c: CaptchaInfo[]) => CaptchaInfo[];
+export interface SolveRecaptchasOptions {
+    filterFoundRecaptchas?: CaptchasCallback;
+}
 export declare type RecaptchaPluginPageAdditions = {
     /** Attempt to find all reCAPTCHAs on this page. */
     findRecaptchas: () => Promise<FindRecaptchasResult>;
     getRecaptchaSolutions: (captchas: CaptchaInfo[], provider?: SolutionProvider) => Promise<GetSolutionsResult>;
     enterRecaptchaSolutions: (solutions: CaptchaSolution[]) => Promise<EnterRecaptchaSolutionsResult>;
     /** Attempt to detect and solve reCAPTCHAs on this page automatically. 🔮 */
-    solveRecaptchas: () => Promise<SolveRecaptchasResult>;
+    solveRecaptchas: (options: SolveRecaptchasOptions) => Promise<SolveRecaptchasResult>;
 };
 export interface SolutionProvider {
     id?: string;
@@ -81,4 +85,5 @@ export interface ContentScriptOpts {
 }
 export interface ContentScriptData {
     solutions?: CaptchaSolution[];
+    captchasAttempted?: CaptchaInfo[] | false;
 }
