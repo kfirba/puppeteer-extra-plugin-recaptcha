@@ -127,8 +127,8 @@ class RecaptchaContentScript {
             .contentWindow.document.querySelector(selectors);
     }
     _hideChallengeWindowIfPresent(id) {
-        const selectors = `iframe[src^='https://www.google.com/recaptcha/api2/bframe'][name^="a-${id || ''}"] , 
-                       iframe[src^='https://www.google.com/recaptcha/enterprise/bframe'][name^="a-${id || ''}"]`;
+        const selectors = `iframe[src^='https://www.google.com/recaptcha/api2/bframe'][name^="c-${id || ''}"], 
+                       iframe[src^='https://www.google.com/recaptcha/enterprise/bframe'][name^="c-${id || ''}"]`;
         let frame = document.querySelector(selectors);
         if (!frame) {
             frame = document
