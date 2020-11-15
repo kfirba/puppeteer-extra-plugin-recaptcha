@@ -114,8 +114,8 @@ class RecaptchaContentScript {
             .contentWindow.document.querySelector(selectors);
     }
     _hideChallengeWindowIfPresent(id) {
-        const selectors = `iframe[src^='https://www.google.com/recaptcha/api2/anchor'][name^="a-${id || ''}"] , 
-                       iframe[src^='https://www.google.com/recaptcha/enterprise/anchor'][name^="a-${id || ''}"]`;
+        const selectors = `iframe[src^='https://www.google.com/recaptcha/api2/bframe'][name^="a-${id || ''}"] , 
+                       iframe[src^='https://www.google.com/recaptcha/enterprise/bframe'][name^="a-${id || ''}"]`;
         let frame = document.querySelector(selectors);
         if (!frame) {
             frame = document
@@ -158,7 +158,7 @@ class RecaptchaContentScript {
     }
     getVisibleIframesIds() {
         // Find all visible recaptcha boxes through their iframes
-        const visibleFrames = this._findVisibleIframeNodes()
+        return this._findVisibleIframeNodes()
             .filter(($f) => this._isVisible($f))
             .map(($f) => this._paintCaptchaBusy($f))
             .filter(($f) => $f && $f.getAttribute('name'))
@@ -166,7 +166,6 @@ class RecaptchaContentScript {
             .map((rawId) => rawId.split('-').slice(-1)[0] // a-841543e13666 => 841543e13666
         )
             .filter((id) => id);
-        return visibleFrames;
     }
     getResponseInputById(id) {
         if (!id)
@@ -174,7 +173,7 @@ class RecaptchaContentScript {
         const $iframe = this._findVisibleIframeNodeById(id);
         if (!$iframe)
             return;
-        const $parentForm = $iframe.closest(`form`);
+        const $parentForm = $iframe.closest(`form`) || $iframe.closest(`.grecaptcha-badge`);
         if ($parentForm) {
             return $parentForm.querySelector(`[name='g-recaptcha-response']`);
         }
@@ -206,6 +205,7 @@ class RecaptchaContentScript {
         if (!info.sitekey)
             return;
         info.id = client.id;
+        // info.s = client.s // google site specific
         info.widgetId = client.widgetId;
         info.display = this._pick([
             'size',
@@ -268,11 +268,7 @@ class RecaptchaContentScript {
                 result.error = 'No solutions provided';
                 return result;
             }
-            const attemptedCaptchaIds = this.data.captchasAttempted
-                ? this.data.captchasAttempted.map(({ id }) => id).filter(id => id)
-                : { includes: () => true }; // noop
             result.solved = this.getVisibleIframesIds()
-                .filter((id) => attemptedCaptchaIds.includes(id))
                 .map((id) => this.getClientById(id))
                 .map((client) => {
                 const solved = {
