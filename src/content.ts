@@ -133,28 +133,27 @@ export class RecaptchaContentScript {
   }
 
   private _hideChallengeWindowIfPresent(id?: string) {
-    let frame: HTMLElement | null = document.querySelector<HTMLIFrameElement>(
-      `iframe[src^='https://www.google.com/recaptcha/api2/bframe'][name^="c-${
-        id || ''
-      }"]`
-      + ', ' +
-      `iframe[src^='https://www.google.com/recaptcha/enterprise/bframe'][name^="c-${
-        id || ''
-      }"]`
+    let frames: NodeListOf<HTMLElement> | null = document.querySelectorAll<HTMLIFrameElement>(
+        `iframe[src^='https://www.google.com/recaptcha/api2/bframe']`
+        + ', ' +
+        `iframe[src^='https://www.google.com/recaptcha/enterprise/bframe']`
     )
-    if (!frame) {
+    if (!frames || !frames.length) {
       return
     }
-    while (
-      frame &&
-      frame.parentElement &&
-      frame.parentElement !== document.body
-    ) {
-      frame = frame.parentElement
-    }
-    if (frame) {
-      frame.style.visibility = 'hidden'
-    }
+
+    frames.forEach(frame => {
+      while (
+          frame &&
+          frame.parentElement &&
+          frame.parentElement !== document.body
+          ) {
+        frame = frame.parentElement
+      }
+      if (frame) {
+        frame.style.visibility = 'hidden'
+      }
+    })
   }
 
   private getClients() {

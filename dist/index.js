@@ -195,7 +195,6 @@ class PuppeteerExtraPluginRecaptcha extends puppeteer_extra_plugin_1.PuppeteerEx
         return response;
     }
     _addCustomMethods(prop) {
-        console.log('adding methods....');
         prop.findRecaptchas = async () => this.findRecaptchas(prop);
         prop.getRecaptchaSolutions = async (captchas, provider) => this.getRecaptchaSolutions(captchas, provider);
         prop.enterRecaptchaSolutions = async (solutions) => this.enterRecaptchaSolutions(prop, solutions);

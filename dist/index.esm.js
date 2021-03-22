@@ -111,20 +111,22 @@ class RecaptchaContentScript {
             `iframe[src^='https://www.google.com/recaptcha/enterprise/anchor'][name^="a-${id || ''}"]`);
     }
     _hideChallengeWindowIfPresent(id) {
-        let frame = document.querySelector(`iframe[src^='https://www.google.com/recaptcha/api2/bframe'][name^="c-${id || ''}"]`
+        let frames = document.querySelectorAll(`iframe[src^='https://www.google.com/recaptcha/api2/bframe']`
             + ', ' +
-            `iframe[src^='https://www.google.com/recaptcha/enterprise/bframe'][name^="c-${id || ''}"]`);
-        if (!frame) {
+            `iframe[src^='https://www.google.com/recaptcha/enterprise/bframe']`);
+        if (!frames || !frames.length) {
             return;
         }
-        while (frame &&
-            frame.parentElement &&
-            frame.parentElement !== document.body) {
-            frame = frame.parentElement;
-        }
-        if (frame) {
-            frame.style.visibility = 'hidden';
-        }
+        frames.forEach(frame => {
+            while (frame &&
+                frame.parentElement &&
+                frame.parentElement !== document.body) {
+                frame = frame.parentElement;
+            }
+            if (frame) {
+                frame.style.visibility = 'hidden';
+            }
+        });
     }
     getClients() {
         // Bail out early if there's no indication of recaptchas
@@ -869,7 +871,6 @@ class PuppeteerExtraPluginRecaptcha extends PuppeteerExtraPlugin {
         return response;
     }
     _addCustomMethods(prop) {
-        console.log('adding methods....');
         prop.findRecaptchas = async () => this.findRecaptchas(prop);
         prop.getRecaptchaSolutions = async (captchas, provider) => this.getRecaptchaSolutions(captchas, provider);
         prop.enterRecaptchaSolutions = async (solutions) => this.enterRecaptchaSolutions(prop, solutions);
