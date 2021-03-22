@@ -195,16 +195,14 @@ class PuppeteerExtraPluginRecaptcha extends puppeteer_extra_plugin_1.PuppeteerEx
         return response;
     }
     _addCustomMethods(prop) {
+        console.log('adding methods....');
         prop.findRecaptchas = async () => this.findRecaptchas(prop);
         prop.getRecaptchaSolutions = async (captchas, provider) => this.getRecaptchaSolutions(captchas, provider);
         prop.enterRecaptchaSolutions = async (solutions) => this.enterRecaptchaSolutions(prop, solutions);
         // Add convenience methods that wraps all others
         prop.solveRecaptchas = async () => this.solveRecaptchas(prop);
     }
-    async onPageCreated(page) {
-        this.debug('onPageCreated', page.url());
-        // Make sure we can run our content script
-        await page.setBypassCSP(true);
+    _addCustomMethodsToPage(page) {
         // Add custom page methods
         this._addCustomMethods(page);
         // Add custom methods to potential frames as well
@@ -214,11 +212,17 @@ class PuppeteerExtraPluginRecaptcha extends puppeteer_extra_plugin_1.PuppeteerEx
             this._addCustomMethods(frame);
         });
     }
+    async onPageCreated(page) {
+        this.debug('onPageCreated', page.url());
+        // Make sure we can run our content script
+        await page.setBypassCSP(true);
+        this._addCustomMethodsToPage(page);
+    }
     /** Add additions to already existing pages and frames */
     async onBrowser(browser) {
         const pages = await browser.pages();
         for (const page of pages) {
-            this._addCustomMethods(page);
+            this._addCustomMethodsToPage(page);
             for (const frame of page.mainFrame().childFrames()) {
                 this._addCustomMethods(frame);
             }

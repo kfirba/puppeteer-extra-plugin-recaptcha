@@ -17,6 +17,7 @@ export declare class PuppeteerExtraPluginRecaptcha extends PuppeteerExtraPlugin 
     enterRecaptchaSolutions(page: Page | Frame, solutions: types.CaptchaSolution[]): Promise<types.EnterRecaptchaSolutionsResult>;
     solveRecaptchas(page: Page | Frame): Promise<types.SolveRecaptchasResult>;
     private _addCustomMethods;
+    _addCustomMethodsToPage(page: Page): void;
     onPageCreated(page: Page): Promise<void>;
     /** Add additions to already existing pages and frames */
     onBrowser(browser: Browser): Promise<void>;

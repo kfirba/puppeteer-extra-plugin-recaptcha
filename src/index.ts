@@ -239,6 +239,7 @@ export class PuppeteerExtraPluginRecaptcha extends PuppeteerExtraPlugin {
   }
 
   private _addCustomMethods(prop: Page | Frame) {
+    console.log('adding methods....')
     prop.findRecaptchas = async () => this.findRecaptchas(prop)
     prop.getRecaptchaSolutions = async (
       captchas: types.CaptchaInfo[],
@@ -250,11 +251,7 @@ export class PuppeteerExtraPluginRecaptcha extends PuppeteerExtraPlugin {
     prop.solveRecaptchas = async () => this.solveRecaptchas(prop)
   }
 
-  async onPageCreated(page: Page) {
-    this.debug('onPageCreated', page.url())
-    // Make sure we can run our content script
-    await page.setBypassCSP(true)
-
+  _addCustomMethodsToPage(page: Page) {
     // Add custom page methods
     this._addCustomMethods(page)
 
@@ -265,11 +262,19 @@ export class PuppeteerExtraPluginRecaptcha extends PuppeteerExtraPlugin {
     })
   }
 
+  async onPageCreated(page: Page) {
+    this.debug('onPageCreated', page.url())
+    // Make sure we can run our content script
+    await page.setBypassCSP(true)
+
+    this._addCustomMethodsToPage(page)
+  }
+
   /** Add additions to already existing pages and frames */
   async onBrowser(browser: Browser) {
     const pages = await browser.pages()
     for (const page of pages) {
-      this._addCustomMethods(page)
+      this._addCustomMethodsToPage(page)
       for (const frame of page.mainFrame().childFrames()) {
         this._addCustomMethods(frame)
       }
