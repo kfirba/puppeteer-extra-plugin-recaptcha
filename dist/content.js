@@ -57,13 +57,15 @@ class RecaptchaContentScript {
     }
     async _waitUntilDocumentReady() {
         return new Promise(function (resolve) {
-            if (!document || !window)
-                return resolve();
+            if (!document || !window) {
+                return resolve(null);
+            }
             const loadedAlready = /^loaded|^i|^c/.test(document.readyState);
-            if (loadedAlready)
-                return resolve();
+            if (loadedAlready) {
+                return resolve(null);
+            }
             function onReady() {
-                resolve();
+                resolve(null);
                 document.removeEventListener('DOMContentLoaded', onReady);
                 window.removeEventListener('load', onReady);
             }
@@ -94,34 +96,19 @@ class RecaptchaContentScript {
         return $iframe;
     }
     _findVisibleIframeNodes() {
-        const selectors = `iframe[src^='https://www.google.com/recaptcha/api2/anchor'][name^="a-"] , 
-                       iframe[src^='https://www.google.com/recaptcha/enterprise/anchor'][name^="a-"]`;
-        const frames = Array.from(document.querySelectorAll(selectors));
-        const framesInFrames = Array.from(document
-            .querySelector('iframe')
-            .contentWindow.document.querySelectorAll(selectors));
-        return [...frames, ...framesInFrames];
+        return Array.from(document.querySelectorAll(`iframe[src^='https://www.google.com/recaptcha/api2/anchor'][name^="a-"]`
+            + ', ' +
+            `iframe[src^='https://www.google.com/recaptcha/enterprise/anchor'][name^="a-"]`));
     }
     _findVisibleIframeNodeById(id) {
-        const selectors = `iframe[src^='https://www.google.com/recaptcha/api2/anchor'][name^="a-${id || ''}"], 
-                       iframe[src^='https://www.google.com/recaptcha/enterprise/anchor'][name^="a-${id || ''}"]`;
-        let frame = document.querySelector(selectors);
-        if (frame) {
-            return frame;
-        }
-        return document
-            .querySelector('iframe')
-            .contentWindow.document.querySelector(selectors);
+        return document.querySelector(`iframe[src^='https://www.google.com/recaptcha/api2/anchor'][name^="a-${id || ''}"]`
+            + ', ' +
+            `iframe[src^='https://www.google.com/recaptcha/enterprise/anchor'][name^="a-${id || ''}"]`);
     }
     _hideChallengeWindowIfPresent(id) {
-        const selectors = `iframe[src^='https://www.google.com/recaptcha/api2/bframe'][name^="c-${id || ''}"], 
-                       iframe[src^='https://www.google.com/recaptcha/enterprise/bframe'][name^="c-${id || ''}"]`;
-        let frame = document.querySelector(selectors);
-        if (!frame) {
-            frame = document
-                .querySelector('iframe')
-                .contentWindow.document.querySelector(selectors);
-        }
+        let frame = document.querySelector(`iframe[src^='https://www.google.com/recaptcha/api2/bframe'][name^="c-${id || ''}"]`
+            + ', ' +
+            `iframe[src^='https://www.google.com/recaptcha/enterprise/bframe'][name^="c-${id || ''}"]`);
         if (!frame) {
             return;
         }
@@ -134,7 +121,8 @@ class RecaptchaContentScript {
             frame.style.visibility = 'hidden';
         }
     }
-    getClientsFromWindow(window) {
+    getClients() {
+        // Bail out early if there's no indication of recaptchas
         if (!window || !window.__google_recaptcha_client)
             return;
         if (!window.___grecaptcha_cfg || !window.___grecaptcha_cfg.clients) {
@@ -144,20 +132,8 @@ class RecaptchaContentScript {
             return;
         return window.___grecaptcha_cfg.clients;
     }
-    getClients() {
-        const clients = this.getClientsFromWindow(window);
-        if (clients) {
-            return clients;
-        }
-        for (const iframe of Array.from(document.querySelectorAll('iframe'))) {
-            const iframeClients = this.getClientsFromWindow(iframe.contentWindow);
-            if (iframeClients) {
-                return iframeClients;
-            }
-        }
-    }
     getVisibleIframesIds() {
-        // Find all visible recaptcha boxes through their iframes
+        // Find all regular visible recaptcha boxes through their iframes
         return this._findVisibleIframeNodes()
             .filter(($f) => this._isVisible($f))
             .map(($f) => this._paintCaptchaBusy($f))
@@ -167,13 +143,34 @@ class RecaptchaContentScript {
         )
             .filter((id) => id);
     }
+    getInvisibleIframesIds() {
+        // Find all invisible recaptcha boxes through their iframes (only the ones with an active challenge window)
+        return this._findVisibleIframeNodes()
+            .filter(($f) => $f && $f.getAttribute('name'))
+            .map(($f) => $f.getAttribute('name') || '') // a-841543e13666
+            .map((rawId) => rawId.split('-').slice(-1)[0] // a-841543e13666 => 841543e13666
+        )
+            .filter((id) => id)
+            .filter((id) => document.querySelectorAll(`iframe[src^='https://www.google.com/recaptcha/api2/bframe'][name^="c-${id || ''}"]`
+            + ', ' +
+            `iframe[src^='https://www.google.com/recaptcha/enterprise/bframe'][name^="c-${id || ''}"]`).length);
+    }
+    getIframesIds() {
+        // Find all recaptcha boxes through their iframes, check for invisible ones as fallback
+        const results = [
+            ...this.getVisibleIframesIds(),
+            ...this.getInvisibleIframesIds(),
+        ];
+        // Deduplicate results by using the unique id as key
+        return [...new Map(results.map((x) => [x.id, x])).values()];
+    }
     getResponseInputById(id) {
         if (!id)
             return;
         const $iframe = this._findVisibleIframeNodeById(id);
         if (!$iframe)
             return;
-        const $parentForm = $iframe.closest(`form`) || $iframe.closest(`.grecaptcha-badge`);
+        const $parentForm = $iframe.closest(`form`);
         if ($parentForm) {
             return $parentForm.querySelector(`[name='g-recaptcha-response']`);
         }
@@ -204,8 +201,9 @@ class RecaptchaContentScript {
         const info = this._pick(['sitekey', 'callback'])(client);
         if (!info.sitekey)
             return;
+        info._vendor = 'recaptcha';
         info.id = client.id;
-        // info.s = client.s // google site specific
+        info.s = client.s; // google site specific
         info.widgetId = client.widgetId;
         info.display = this._pick([
             'size',
@@ -233,7 +231,7 @@ class RecaptchaContentScript {
             const clients = this.getClients();
             if (!clients)
                 return result;
-            result.captchas = this.getVisibleIframesIds()
+            result.captchas = this.getIframesIds()
                 .map((id) => this.getClientById(id))
                 .map((client) => this.extractInfoFromClient(client))
                 .map((info) => {
@@ -268,10 +266,11 @@ class RecaptchaContentScript {
                 result.error = 'No solutions provided';
                 return result;
             }
-            result.solved = this.getVisibleIframesIds()
+            result.solved = this.getIframesIds()
                 .map((id) => this.getClientById(id))
                 .map((client) => {
                 const solved = {
+                    _vendor: 'recaptcha',
                     id: client.id,
                     responseElement: false,
                     responseCallback: false,

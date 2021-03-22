@@ -70,12 +70,16 @@ export class RecaptchaContentScript {
 
   private async _waitUntilDocumentReady() {
     return new Promise(function (resolve) {
-      if (!document || !window) return resolve()
+      if (!document || !window) {
+        return resolve(null)
+      }
       const loadedAlready = /^loaded|^i|^c/.test(document.readyState)
-      if (loadedAlready) return resolve()
+      if (loadedAlready) {
+        return resolve(null)
+      }
 
       function onReady() {
-        resolve()
+        resolve(null)
         document.removeEventListener('DOMContentLoaded', onReady)
         window.removeEventListener('load', onReady)
       }
@@ -108,54 +112,36 @@ export class RecaptchaContentScript {
   }
 
   private _findVisibleIframeNodes() {
-    const selectors = `iframe[src^='https://www.google.com/recaptcha/api2/anchor'][name^="a-"] , 
-                       iframe[src^='https://www.google.com/recaptcha/enterprise/anchor'][name^="a-"]`
-    const frames = Array.from(
-      document.querySelectorAll<HTMLIFrameElement>(selectors)
+    return Array.from(
+      document.querySelectorAll<HTMLIFrameElement>(
+        `iframe[src^='https://www.google.com/recaptcha/api2/anchor'][name^="a-"]`
+        + ', ' +
+        `iframe[src^='https://www.google.com/recaptcha/enterprise/anchor'][name^="a-"]`
+      )
     )
-
-    const framesInFrames = Array.from(
-      document
-        .querySelector<HTMLIFrameElement>('iframe')
-        .contentWindow.document.querySelectorAll<HTMLIFrameElement>(selectors)
-    )
-
-    return [...frames, ...framesInFrames]
   }
   private _findVisibleIframeNodeById(id?: string) {
-    const selectors = `iframe[src^='https://www.google.com/recaptcha/api2/anchor'][name^="a-${
-      id || ''
-    }"], 
-                       iframe[src^='https://www.google.com/recaptcha/enterprise/anchor'][name^="a-${
-                         id || ''
-                       }"]`
-
-    let frame: HTMLIFrameElement | null = document.querySelector<
-      HTMLIFrameElement
-    >(selectors)
-    if (frame) {
-      return frame
-    }
-
-    return document
-      .querySelector<HTMLIFrameElement>('iframe')
-      .contentWindow.document.querySelector<HTMLIFrameElement>(selectors)
+    return document.querySelector<HTMLIFrameElement>(
+      `iframe[src^='https://www.google.com/recaptcha/api2/anchor'][name^="a-${
+        id || ''
+      }"]`
+      + ', ' +
+      `iframe[src^='https://www.google.com/recaptcha/enterprise/anchor'][name^="a-${
+        id || ''
+      }"]`
+    )
   }
 
   private _hideChallengeWindowIfPresent(id?: string) {
-    const selectors = `iframe[src^='https://www.google.com/recaptcha/api2/bframe'][name^="c-${id || ''}"], 
-                       iframe[src^='https://www.google.com/recaptcha/enterprise/bframe'][name^="c-${id || ''}"]`
-
     let frame: HTMLElement | null = document.querySelector<HTMLIFrameElement>(
-      selectors
+      `iframe[src^='https://www.google.com/recaptcha/api2/bframe'][name^="c-${
+        id || ''
+      }"]`
+      + ', ' +
+      `iframe[src^='https://www.google.com/recaptcha/enterprise/bframe'][name^="c-${
+        id || ''
+      }"]`
     )
-
-    if (!frame) {
-      frame = document
-        .querySelector<HTMLIFrameElement>('iframe')
-        .contentWindow.document.querySelector<HTMLIFrameElement>(selectors)
-    }
-
     if (!frame) {
       return
     }
@@ -171,7 +157,8 @@ export class RecaptchaContentScript {
     }
   }
 
-  private getClientsFromWindow(window) {
+  private getClients() {
+    // Bail out early if there's no indication of recaptchas
     if (!window || !window.__google_recaptcha_client) return
     if (!window.___grecaptcha_cfg || !window.___grecaptcha_cfg.clients) {
       return
@@ -180,24 +167,8 @@ export class RecaptchaContentScript {
     return window.___grecaptcha_cfg.clients
   }
 
-  private getClients() {
-    const clients = this.getClientsFromWindow(window)
-    if (clients) {
-      return clients
-    }
-
-    for (const iframe of Array.from(
-      document.querySelectorAll<HTMLIFrameElement>('iframe')
-    )) {
-      const iframeClients = this.getClientsFromWindow(iframe.contentWindow)
-      if (iframeClients) {
-        return iframeClients
-      }
-    }
-  }
-
   private getVisibleIframesIds() {
-    // Find all visible recaptcha boxes through their iframes
+    // Find all regular visible recaptcha boxes through their iframes
     return this._findVisibleIframeNodes()
       .filter(($f) => this._isVisible($f))
       .map(($f) => this._paintCaptchaBusy($f))
@@ -209,12 +180,44 @@ export class RecaptchaContentScript {
       .filter((id) => id)
   }
 
+  private getInvisibleIframesIds() {
+    // Find all invisible recaptcha boxes through their iframes (only the ones with an active challenge window)
+    return this._findVisibleIframeNodes()
+      .filter(($f) => $f && $f.getAttribute('name'))
+      .map(($f) => $f.getAttribute('name') || '') // a-841543e13666
+      .map(
+        (rawId) => rawId.split('-').slice(-1)[0] // a-841543e13666 => 841543e13666
+      )
+      .filter((id) => id)
+      .filter(
+        (id) =>
+          document.querySelectorAll(
+            `iframe[src^='https://www.google.com/recaptcha/api2/bframe'][name^="c-${
+              id || ''
+            }"]`
+            + ', ' +
+            `iframe[src^='https://www.google.com/recaptcha/enterprise/bframe'][name^="c-${
+              id || ''
+            }"]`
+          ).length
+      )
+  }
+
+  private getIframesIds() {
+    // Find all recaptcha boxes through their iframes, check for invisible ones as fallback
+    const results = [
+      ...this.getVisibleIframesIds(),
+      ...this.getInvisibleIframesIds(),
+    ]
+    // Deduplicate results by using the unique id as key
+    return [...new Map(results.map((x: any) => [x.id, x])).values()]
+  }
+
   private getResponseInputById(id?: string) {
     if (!id) return
     const $iframe = this._findVisibleIframeNodeById(id)
     if (!$iframe) return
-    const $parentForm =
-      $iframe.closest(`form`) || $iframe.closest(`.grecaptcha-badge`)
+    const $parentForm = $iframe.closest(`form`)
     if ($parentForm) {
       return $parentForm.querySelector(`[name='g-recaptcha-response']`)
     }
@@ -243,8 +246,9 @@ export class RecaptchaContentScript {
     if (!client) return
     const info: types.CaptchaInfo = this._pick(['sitekey', 'callback'])(client)
     if (!info.sitekey) return
+    info._vendor = 'recaptcha'
     info.id = client.id
-    // info.s = client.s // google site specific
+    info.s = client.s // google site specific
     info.widgetId = client.widgetId
     info.display = this._pick([
       'size',
@@ -271,7 +275,7 @@ export class RecaptchaContentScript {
       await this._waitUntilDocumentReady()
       const clients = this.getClients()
       if (!clients) return result
-      result.captchas = this.getVisibleIframesIds()
+      result.captchas = this.getIframesIds()
         .map((id) => this.getClientById(id))
         .map((client) => this.extractInfoFromClient(client))
         .map((info) => {
@@ -306,10 +310,11 @@ export class RecaptchaContentScript {
         return result
       }
 
-      result.solved = this.getVisibleIframesIds()
+      result.solved = this.getIframesIds()
         .map((id) => this.getClientById(id))
         .map((client) => {
           const solved: types.CaptchaSolved = {
+            _vendor: 'recaptcha',
             id: client.id,
             responseElement: false,
             responseCallback: false,

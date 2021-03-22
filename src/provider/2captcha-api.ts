@@ -10,7 +10,6 @@ var apiKey
 var apiInUrl = 'http://2captcha.com/in.php'
 var apiResUrl = 'http://2captcha.com/res.php'
 var apiMethod = 'base64'
-var apiMethodRecaptcha = 'userrecaptcha'
 var SOFT_ID = '2589'
 
 var defaultOptions = {
@@ -60,7 +59,10 @@ function pollCaptcha(captchaId, options, invalid, callback) {
         callback = function() {} // prevent the callback from being called more than once, if multiple http requests are open at the same time.
       })
     })
-
+    request.on('error', function(e) {
+      request.destroy()
+      callback(e)
+    })
     request.end()
   }, options.pollingInterval || defaultOptions.pollingInterval)
 }
@@ -125,11 +127,23 @@ export const decode = function(base64, options, callback) {
       )
     })
   })
+  request.on('error', function(e) {
+    request.destroy()
+    callback(e)
+  })
+
   request.write(postData)
   request.end()
 }
 
-export const decodeReCaptcha = function(captcha, pageUrl, options, callback) {
+export const decodeReCaptcha = function(
+  captchaMethod,
+  captcha,
+  pageUrl,
+  extraData,
+  options,
+  callback
+) {
   if (!callback) {
     callback = options
     options = defaultOptions
@@ -138,11 +152,18 @@ export const decodeReCaptcha = function(captcha, pageUrl, options, callback) {
   httpRequestOptions.method = 'POST'
 
   var postData = {
-    method: apiMethodRecaptcha,
+    method: captchaMethod,
     key: apiKey,
     soft_id: SOFT_ID,
-    googlekey: captcha,
-    pageurl: pageUrl
+    // googlekey: captcha,
+    pageurl: pageUrl,
+    ...extraData
+  }
+  if (captchaMethod === 'userrecaptcha') {
+    postData.googlekey = captcha
+  }
+  if (captchaMethod === 'hcaptcha') {
+    postData.sitekey = captcha
   }
 
   postData = querystring.stringify(postData)
@@ -177,7 +198,14 @@ export const decodeReCaptcha = function(captcha, pageUrl, options, callback) {
           }
           if (this.options.retries > 1) {
             this.options.retries = this.options.retries - 1
-            decode(captcha, this.options, callback)
+            decodeReCaptcha(
+              captchaMethod,
+              captcha,
+              pageUrl,
+              extraData,
+              this.options,
+              callback
+            )
           } else {
             callbackToInitialCallback('CAPTCHA_FAILED_TOO_MANY_TIMES')
           }
@@ -185,6 +213,10 @@ export const decodeReCaptcha = function(captcha, pageUrl, options, callback) {
         callback
       )
     })
+  })
+  request.on('error', function(e) {
+    request.destroy()
+    callback(e)
   })
   request.write(postData)
   request.end()
@@ -211,6 +243,10 @@ export const decodeUrl = function(uri, options, callback) {
     response.on('end', function() {
       decode(body, options, callback)
     })
+  })
+  request.on('error', function(e) {
+    request.destroy()
+    callback(e)
   })
   request.end()
 }

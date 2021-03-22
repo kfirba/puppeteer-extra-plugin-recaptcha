@@ -11,7 +11,6 @@ var apiKey;
 var apiInUrl = 'http://2captcha.com/in.php';
 var apiResUrl = 'http://2captcha.com/res.php';
 var apiMethod = 'base64';
-var apiMethodRecaptcha = 'userrecaptcha';
 var SOFT_ID = '2589';
 var defaultOptions = {
     pollingInterval: 2000,
@@ -49,6 +48,10 @@ function pollCaptcha(captchaId, options, invalid, callback) {
                 }
                 callback = function () { }; // prevent the callback from being called more than once, if multiple http requests are open at the same time.
             });
+        });
+        request.on('error', function (e) {
+            request.destroy();
+            callback(e);
         });
         request.end();
     }, options.pollingInterval || defaultOptions.pollingInterval);
@@ -99,23 +102,29 @@ exports.decode = function (base64, options, callback) {
             }, callback);
         });
     });
+    request.on('error', function (e) {
+        request.destroy();
+        callback(e);
+    });
     request.write(postData);
     request.end();
 };
-exports.decodeReCaptcha = function (captcha, pageUrl, options, callback) {
+exports.decodeReCaptcha = function (captchaMethod, captcha, pageUrl, extraData, options, callback) {
     if (!callback) {
         callback = options;
         options = defaultOptions;
     }
     var httpRequestOptions = url.parse(apiInUrl);
     httpRequestOptions.method = 'POST';
-    var postData = {
-        method: apiMethodRecaptcha,
-        key: apiKey,
-        soft_id: SOFT_ID,
-        googlekey: captcha,
-        pageurl: pageUrl
-    };
+    var postData = Object.assign({ method: captchaMethod, key: apiKey, soft_id: SOFT_ID, 
+        // googlekey: captcha,
+        pageurl: pageUrl }, extraData);
+    if (captchaMethod === 'userrecaptcha') {
+        postData.googlekey = captcha;
+    }
+    if (captchaMethod === 'hcaptcha') {
+        postData.sitekey = captcha;
+    }
     postData = querystring.stringify(postData);
     var request = http.request(httpRequestOptions, function (response) {
         var body = '';
@@ -138,13 +147,17 @@ exports.decodeReCaptcha = function (captcha, pageUrl, options, callback) {
                 }
                 if (this.options.retries > 1) {
                     this.options.retries = this.options.retries - 1;
-                    exports.decode(captcha, this.options, callback);
+                    exports.decodeReCaptcha(captchaMethod, captcha, pageUrl, extraData, this.options, callback);
                 }
                 else {
                     callbackToInitialCallback('CAPTCHA_FAILED_TOO_MANY_TIMES');
                 }
             }, callback);
         });
+    });
+    request.on('error', function (e) {
+        request.destroy();
+        callback(e);
     });
     request.write(postData);
     request.end();
@@ -167,6 +180,10 @@ exports.decodeUrl = function (uri, options, callback) {
         response.on('end', function () {
             exports.decode(body, options, callback);
         });
+    });
+    request.on('error', function (e) {
+        request.destroy();
+        callback(e);
     });
     request.end();
 };

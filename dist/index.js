@@ -22,12 +22,13 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.PuppeteerExtraPluginRecaptcha = exports.BuiltinSolutionProviders = void 0;
 const puppeteer_extra_plugin_1 = require("puppeteer-extra-plugin");
 const content_1 = require("./content");
+const content_hcaptcha_1 = require("./content-hcaptcha");
 const TwoCaptcha = __importStar(require("./provider/2captcha"));
 exports.BuiltinSolutionProviders = [
     {
         id: TwoCaptcha.PROVIDER_ID,
-        fn: TwoCaptcha.getSolutions
-    }
+        fn: TwoCaptcha.getSolutions,
+    },
 ];
 /**
  * A puppeteer-extra plugin to automatically detect and solve reCAPTCHAs.
@@ -44,23 +45,29 @@ class PuppeteerExtraPluginRecaptcha extends puppeteer_extra_plugin_1.PuppeteerEx
     get defaults() {
         return {
             visualFeedback: true,
-            throwOnError: false
+            throwOnError: false,
         };
     }
     get contentScriptOpts() {
         const { visualFeedback } = this.opts;
         return {
-            visualFeedback
+            visualFeedback,
         };
     }
-    _generateContentScript(fn, data) {
-        this.debug('_generateContentScript', fn, data);
+    _generateContentScript(vendor, fn, data) {
+        this.debug('_generateContentScript', vendor, fn, data);
+        let scriptSource = content_1.RecaptchaContentScript.toString();
+        let scriptName = 'RecaptchaContentScript';
+        if (vendor === 'hcaptcha') {
+            scriptSource = content_hcaptcha_1.HcaptchaContentScript.toString();
+            scriptName = 'HcaptchaContentScript';
+        }
         return `(async() => {
       const DATA = ${JSON.stringify(data || null)}
       const OPTS = ${JSON.stringify(this.contentScriptOpts)}
 
-      ${content_1.RecaptchaContentScript.toString()}
-      const script = new RecaptchaContentScript(OPTS, DATA)
+      ${scriptSource}
+      const script = new ${scriptName}(OPTS, DATA)
       return script.${fn}()
     })()`;
     }
@@ -79,9 +86,24 @@ class PuppeteerExtraPluginRecaptcha extends puppeteer_extra_plugin_1.PuppeteerEx
       `, { polling: 200, timeout: 10 * 1000 });
             this.debug('waitForRecaptchaClient - end', new Date()); // used as timer
         }
+        const hasHcaptchaScriptTag = await page.$(`script[src*="//hcaptcha.com/1/api.js"]`);
+        this.debug('hasHcaptchaScriptTag', !!hasHcaptchaScriptTag);
+        if (hasHcaptchaScriptTag) {
+            this.debug('wait:hasHcaptchaScriptTag - start', new Date());
+            await page.waitForFunction(`
+        (function() {
+          return window.hcaptcha
+        })()
+      `, { polling: 200, timeout: 10 * 1000 });
+            this.debug('wait:hasHcaptchaScriptTag - end', new Date()); // used as timer
+        }
         // Even without a recaptcha script tag we're trying, just in case.
-        const evaluateReturn = await page.evaluate(this._generateContentScript('findRecaptchas'));
-        const response = evaluateReturn;
+        const resultRecaptcha = (await page.evaluate(this._generateContentScript('recaptcha', 'findRecaptchas')));
+        const resultHcaptcha = (await page.evaluate(this._generateContentScript('hcaptcha', 'findRecaptchas')));
+        const response = {
+            captchas: [...resultRecaptcha.captchas, ...resultHcaptcha.captchas],
+            error: resultRecaptcha.error || resultHcaptcha.error,
+        };
         this.debug('findRecaptchas', response);
         if (this.opts.throwOnError && response.error) {
             throw new Error(response.error);
@@ -98,7 +120,7 @@ class PuppeteerExtraPluginRecaptcha extends puppeteer_extra_plugin_1.PuppeteerEx
         }
         let fn = provider.fn;
         if (!fn) {
-            const builtinProvider = exports.BuiltinSolutionProviders.find(p => p.id === (provider || {}).id);
+            const builtinProvider = exports.BuiltinSolutionProviders.find((p) => p.id === (provider || {}).id);
             if (!builtinProvider || !builtinProvider.fn) {
                 throw new Error(`Cannot find builtin provider with id '${provider.id}'.`);
             }
@@ -117,37 +139,48 @@ class PuppeteerExtraPluginRecaptcha extends puppeteer_extra_plugin_1.PuppeteerEx
         }
         return response;
     }
-    async enterRecaptchaSolutions(page, solutions, captchasAttempted) {
-        this.debug('enterRecaptchaSolutions');
-        const evaluateReturn = await page.evaluate(this._generateContentScript('enterRecaptchaSolutions', {
-            solutions,
-            captchasAttempted
-        }));
-        const response = evaluateReturn;
-        response.error = response.error || response.solved.find(s => !!s.error);
+    async enterRecaptchaSolutions(page, solutions) {
+        this.debug('enterRecaptchaSolutions', { solutions });
+        const hasRecaptcha = !!solutions.find((s) => s._vendor === 'recaptcha');
+        const solvedRecaptcha = hasRecaptcha
+            ? (await page.evaluate(this._generateContentScript('recaptcha', 'enterRecaptchaSolutions', {
+                solutions,
+            })))
+            : { solved: [] };
+        const hasHcaptcha = !!solutions.find((s) => s._vendor === 'hcaptcha');
+        const solvedHcaptcha = hasHcaptcha
+            ? (await page.evaluate(this._generateContentScript('hcaptcha', 'enterRecaptchaSolutions', {
+                solutions,
+            })))
+            : { solved: [] };
+        const response = {
+            solved: [...solvedRecaptcha.solved, ...solvedHcaptcha.solved],
+            error: solvedRecaptcha.error || solvedHcaptcha.error,
+        };
+        response.error = response.error || response.solved.find((s) => !!s.error);
         this.debug('enterRecaptchaSolutions', response);
         if (this.opts.throwOnError && response.error) {
             throw new Error(response.error);
         }
         return response;
     }
-    async solveRecaptchas(page, options = {}) {
+    async solveRecaptchas(page) {
         this.debug('solveRecaptchas');
         const response = {
             captchas: [],
             solutions: [],
             solved: [],
-            error: null
+            error: null,
         };
         try {
             // If `this.opts.throwOnError` is set any of the
             // following will throw and abort execution.
             const { captchas, error: captchasError } = await this.findRecaptchas(page);
-            response.captchas = options.filterFoundRecaptchas ? options.filterFoundRecaptchas(captchas) : captchas;
+            response.captchas = captchas;
             if (captchas.length) {
-                const { solutions, error: solutionsError } = await this.getRecaptchaSolutions(response.captchas);
+                const { solutions, error: solutionsError, } = await this.getRecaptchaSolutions(response.captchas);
                 response.solutions = solutions;
-                const { solved, error: solvedError } = await this.enterRecaptchaSolutions(page, response.solutions, response.captchas);
+                const { solved, error: solvedError, } = await this.enterRecaptchaSolutions(page, response.solutions);
                 response.solved = solved;
                 response.error = captchasError || solutionsError || solvedError;
             }
@@ -164,9 +197,9 @@ class PuppeteerExtraPluginRecaptcha extends puppeteer_extra_plugin_1.PuppeteerEx
     _addCustomMethods(prop) {
         prop.findRecaptchas = async () => this.findRecaptchas(prop);
         prop.getRecaptchaSolutions = async (captchas, provider) => this.getRecaptchaSolutions(captchas, provider);
-        prop.enterRecaptchaSolutions = async (solutions) => this.enterRecaptchaSolutions(prop, solutions, false);
+        prop.enterRecaptchaSolutions = async (solutions) => this.enterRecaptchaSolutions(prop, solutions);
         // Add convenience methods that wraps all others
-        prop.solveRecaptchas = async (options = {}) => this.solveRecaptchas(prop, options);
+        prop.solveRecaptchas = async () => this.solveRecaptchas(prop);
     }
     async onPageCreated(page) {
         this.debug('onPageCreated', page.url());
@@ -175,7 +208,7 @@ class PuppeteerExtraPluginRecaptcha extends puppeteer_extra_plugin_1.PuppeteerEx
         // Add custom page methods
         this._addCustomMethods(page);
         // Add custom methods to potential frames as well
-        page.on('frameattached', frame => {
+        page.on('frameattached', (frame) => {
             if (!frame)
                 return;
             this._addCustomMethods(frame);

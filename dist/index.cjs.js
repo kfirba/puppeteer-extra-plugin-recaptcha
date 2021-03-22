@@ -1,5 +1,5 @@
 /*!
- * puppeteer-extra-plugin-recaptcha v3.1.18 by berstend
+ * puppeteer-extra-plugin-recaptcha v3.3.7 by berstend
  * https://github.com/berstend/puppeteer-extra/tree/master/packages/puppeteer-extra-plugin-recaptcha
  * @license MIT
  */
@@ -70,13 +70,15 @@ class RecaptchaContentScript {
     }
     async _waitUntilDocumentReady() {
         return new Promise(function (resolve) {
-            if (!document || !window)
-                return resolve();
+            if (!document || !window) {
+                return resolve(null);
+            }
             const loadedAlready = /^loaded|^i|^c/.test(document.readyState);
-            if (loadedAlready)
-                return resolve();
+            if (loadedAlready) {
+                return resolve(null);
+            }
             function onReady() {
-                resolve();
+                resolve(null);
                 document.removeEventListener('DOMContentLoaded', onReady);
                 window.removeEventListener('load', onReady);
             }
@@ -107,34 +109,19 @@ class RecaptchaContentScript {
         return $iframe;
     }
     _findVisibleIframeNodes() {
-        const selectors = `iframe[src^='https://www.google.com/recaptcha/api2/anchor'][name^="a-"] , 
-                       iframe[src^='https://www.google.com/recaptcha/enterprise/anchor'][name^="a-"]`;
-        const frames = Array.from(document.querySelectorAll(selectors));
-        const framesInFrames = Array.from(document
-            .querySelector('iframe')
-            .contentWindow.document.querySelectorAll(selectors));
-        return [...frames, ...framesInFrames];
+        return Array.from(document.querySelectorAll(`iframe[src^='https://www.google.com/recaptcha/api2/anchor'][name^="a-"]`
+            + ', ' +
+            `iframe[src^='https://www.google.com/recaptcha/enterprise/anchor'][name^="a-"]`));
     }
     _findVisibleIframeNodeById(id) {
-        const selectors = `iframe[src^='https://www.google.com/recaptcha/api2/anchor'][name^="a-${id || ''}"], 
-                       iframe[src^='https://www.google.com/recaptcha/enterprise/anchor'][name^="a-${id || ''}"]`;
-        let frame = document.querySelector(selectors);
-        if (frame) {
-            return frame;
-        }
-        return document
-            .querySelector('iframe')
-            .contentWindow.document.querySelector(selectors);
+        return document.querySelector(`iframe[src^='https://www.google.com/recaptcha/api2/anchor'][name^="a-${id || ''}"]`
+            + ', ' +
+            `iframe[src^='https://www.google.com/recaptcha/enterprise/anchor'][name^="a-${id || ''}"]`);
     }
     _hideChallengeWindowIfPresent(id) {
-        const selectors = `iframe[src^='https://www.google.com/recaptcha/api2/bframe'][name^="c-${id || ''}"], 
-                       iframe[src^='https://www.google.com/recaptcha/enterprise/bframe'][name^="c-${id || ''}"]`;
-        let frame = document.querySelector(selectors);
-        if (!frame) {
-            frame = document
-                .querySelector('iframe')
-                .contentWindow.document.querySelector(selectors);
-        }
+        let frame = document.querySelector(`iframe[src^='https://www.google.com/recaptcha/api2/bframe'][name^="c-${id || ''}"]`
+            + ', ' +
+            `iframe[src^='https://www.google.com/recaptcha/enterprise/bframe'][name^="c-${id || ''}"]`);
         if (!frame) {
             return;
         }
@@ -147,7 +134,8 @@ class RecaptchaContentScript {
             frame.style.visibility = 'hidden';
         }
     }
-    getClientsFromWindow(window) {
+    getClients() {
+        // Bail out early if there's no indication of recaptchas
         if (!window || !window.__google_recaptcha_client)
             return;
         if (!window.___grecaptcha_cfg || !window.___grecaptcha_cfg.clients) {
@@ -157,20 +145,8 @@ class RecaptchaContentScript {
             return;
         return window.___grecaptcha_cfg.clients;
     }
-    getClients() {
-        const clients = this.getClientsFromWindow(window);
-        if (clients) {
-            return clients;
-        }
-        for (const iframe of Array.from(document.querySelectorAll('iframe'))) {
-            const iframeClients = this.getClientsFromWindow(iframe.contentWindow);
-            if (iframeClients) {
-                return iframeClients;
-            }
-        }
-    }
     getVisibleIframesIds() {
-        // Find all visible recaptcha boxes through their iframes
+        // Find all regular visible recaptcha boxes through their iframes
         return this._findVisibleIframeNodes()
             .filter(($f) => this._isVisible($f))
             .map(($f) => this._paintCaptchaBusy($f))
@@ -180,13 +156,34 @@ class RecaptchaContentScript {
         )
             .filter((id) => id);
     }
+    getInvisibleIframesIds() {
+        // Find all invisible recaptcha boxes through their iframes (only the ones with an active challenge window)
+        return this._findVisibleIframeNodes()
+            .filter(($f) => $f && $f.getAttribute('name'))
+            .map(($f) => $f.getAttribute('name') || '') // a-841543e13666
+            .map((rawId) => rawId.split('-').slice(-1)[0] // a-841543e13666 => 841543e13666
+        )
+            .filter((id) => id)
+            .filter((id) => document.querySelectorAll(`iframe[src^='https://www.google.com/recaptcha/api2/bframe'][name^="c-${id || ''}"]`
+            + ', ' +
+            `iframe[src^='https://www.google.com/recaptcha/enterprise/bframe'][name^="c-${id || ''}"]`).length);
+    }
+    getIframesIds() {
+        // Find all recaptcha boxes through their iframes, check for invisible ones as fallback
+        const results = [
+            ...this.getVisibleIframesIds(),
+            ...this.getInvisibleIframesIds(),
+        ];
+        // Deduplicate results by using the unique id as key
+        return [...new Map(results.map((x) => [x.id, x])).values()];
+    }
     getResponseInputById(id) {
         if (!id)
             return;
         const $iframe = this._findVisibleIframeNodeById(id);
         if (!$iframe)
             return;
-        const $parentForm = $iframe.closest(`form`) || $iframe.closest(`.grecaptcha-badge`);
+        const $parentForm = $iframe.closest(`form`);
         if ($parentForm) {
             return $parentForm.querySelector(`[name='g-recaptcha-response']`);
         }
@@ -217,8 +214,9 @@ class RecaptchaContentScript {
         const info = this._pick(['sitekey', 'callback'])(client);
         if (!info.sitekey)
             return;
+        info._vendor = 'recaptcha';
         info.id = client.id;
-        // info.s = client.s // google site specific
+        info.s = client.s; // google site specific
         info.widgetId = client.widgetId;
         info.display = this._pick([
             'size',
@@ -246,7 +244,7 @@ class RecaptchaContentScript {
             const clients = this.getClients();
             if (!clients)
                 return result;
-            result.captchas = this.getVisibleIframesIds()
+            result.captchas = this.getIframesIds()
                 .map((id) => this.getClientById(id))
                 .map((client) => this.extractInfoFromClient(client))
                 .map((info) => {
@@ -281,10 +279,11 @@ class RecaptchaContentScript {
                 result.error = 'No solutions provided';
                 return result;
             }
-            result.solved = this.getVisibleIframesIds()
+            result.solved = this.getIframesIds()
                 .map((id) => this.getClientById(id))
                 .map((client) => {
                 const solved = {
+                    _vendor: 'recaptcha',
                     id: client.id,
                     responseElement: false,
                     responseCallback: false,
@@ -382,6 +381,143 @@ class RecaptchaContentScript {
 }
 */
 
+const ContentScriptDefaultOpts$1 = {
+    visualFeedback: true,
+};
+const ContentScriptDefaultData$1 = {
+    solutions: [],
+};
+/**
+ * Content script for Hcaptcha handling (runs in browser context)
+ * @note External modules are not supported here (due to content script isolation)
+ */
+class HcaptchaContentScript {
+    constructor(opts = ContentScriptDefaultOpts$1, data = ContentScriptDefaultData$1) {
+        this.baseUrl = 'https://assets.hcaptcha.com/captcha/v1/';
+        this.opts = opts;
+        this.data = data;
+    }
+    async _waitUntilDocumentReady() {
+        return new Promise(function (resolve) {
+            if (!document || !window)
+                return resolve(null);
+            const loadedAlready = /^loaded|^i|^c/.test(document.readyState);
+            if (loadedAlready)
+                return resolve(null);
+            function onReady() {
+                resolve(null);
+                document.removeEventListener('DOMContentLoaded', onReady);
+                window.removeEventListener('load', onReady);
+            }
+            document.addEventListener('DOMContentLoaded', onReady);
+            window.addEventListener('load', onReady);
+        });
+    }
+    _paintCaptchaBusy($iframe) {
+        try {
+            if (this.opts.visualFeedback) {
+                $iframe.style.filter = `opacity(60%) hue-rotate(400deg)`; // violet
+            }
+        }
+        catch (error) {
+            // noop
+        }
+        return $iframe;
+    }
+    /** Regular checkboxes */
+    _findRegularCheckboxes() {
+        const nodeList = document.querySelectorAll(`iframe[src^='${this.baseUrl}'][data-hcaptcha-widget-id]:not([src*='invisible'])`);
+        return Array.from(nodeList);
+    }
+    /** Find active challenges from invisible hcaptchas */
+    _findActiveChallenges() {
+        const nodeList = document.querySelectorAll(`div[style*='visible'] iframe[src^='${this.baseUrl}'][src*='hcaptcha-challenge.html'][src*='invisible']`);
+        return Array.from(nodeList);
+    }
+    _extractInfoFromIframes(iframes) {
+        return iframes
+            .map((el) => el.src.replace('.html#', '.html?'))
+            .map((url) => {
+            const { searchParams } = new URL(url);
+            const result = {
+                _vendor: 'hcaptcha',
+                url: document.location.href,
+                id: searchParams.get('id'),
+                sitekey: searchParams.get('sitekey'),
+                display: {
+                    size: searchParams.get('size') || 'normal',
+                },
+            };
+            return result;
+        });
+    }
+    async findRecaptchas() {
+        const result = {
+            captchas: [],
+            error: null,
+        };
+        try {
+            await this._waitUntilDocumentReady();
+            const iframes = [
+                ...this._findRegularCheckboxes(),
+                ...this._findActiveChallenges(),
+            ];
+            if (!iframes.length) {
+                return result;
+            }
+            result.captchas = this._extractInfoFromIframes(iframes);
+            iframes.forEach((el) => {
+                this._paintCaptchaBusy(el);
+            });
+        }
+        catch (error) {
+            result.error = error;
+            return result;
+        }
+        return result;
+    }
+    async enterRecaptchaSolutions() {
+        const result = {
+            solved: [],
+            error: null,
+        };
+        try {
+            await this._waitUntilDocumentReady();
+            const solutions = this.data.solutions;
+            if (!solutions || !solutions.length) {
+                result.error = 'No solutions provided';
+                return result;
+            }
+            result.solved = solutions
+                .filter((solution) => solution._vendor === 'hcaptcha')
+                .filter((solution) => solution.hasSolution === true)
+                .map((solution) => {
+                window.postMessage(JSON.stringify({
+                    id: solution.id,
+                    label: 'challenge-closed',
+                    source: 'hcaptcha',
+                    contents: {
+                        event: 'challenge-passed',
+                        expiration: 120,
+                        response: solution.text,
+                    },
+                }), '*');
+                return {
+                    _vendor: solution._vendor,
+                    id: solution.id,
+                    isSolved: true,
+                    solvedAt: new Date(),
+                };
+            });
+        }
+        catch (error) {
+            result.error = error;
+            return result;
+        }
+        return result;
+    }
+}
+
 // https://github.com/bochkarev-artem/2captcha/blob/master/index.js
 // TODO: Create our own API wrapper
 var http = require('http');
@@ -391,8 +527,6 @@ var querystring = require('querystring');
 var apiKey;
 var apiInUrl = 'http://2captcha.com/in.php';
 var apiResUrl = 'http://2captcha.com/res.php';
-var apiMethod = 'base64';
-var apiMethodRecaptcha = 'userrecaptcha';
 var SOFT_ID = '2589';
 var defaultOptions = {
     pollingInterval: 2000,
@@ -431,25 +565,32 @@ function pollCaptcha(captchaId, options, invalid, callback) {
                 callback = function () { }; // prevent the callback from being called more than once, if multiple http requests are open at the same time.
             });
         });
+        request.on('error', function (e) {
+            request.destroy();
+            callback(e);
+        });
         request.end();
     }, options.pollingInterval || defaultOptions.pollingInterval);
 }
 const setApiKey = function (key) {
     apiKey = key;
 };
-const decode = function (base64, options, callback) {
+const decodeReCaptcha = function (captchaMethod, captcha, pageUrl, extraData, options, callback) {
     if (!callback) {
         callback = options;
         options = defaultOptions;
     }
     var httpRequestOptions = url.parse(apiInUrl);
     httpRequestOptions.method = 'POST';
-    var postData = {
-        method: apiMethod,
-        key: apiKey,
-        soft_id: SOFT_ID,
-        body: base64
-    };
+    var postData = Object.assign({ method: captchaMethod, key: apiKey, soft_id: SOFT_ID, 
+        // googlekey: captcha,
+        pageurl: pageUrl }, extraData);
+    if (captchaMethod === 'userrecaptcha') {
+        postData.googlekey = captcha;
+    }
+    if (captchaMethod === 'hcaptcha') {
+        postData.sitekey = captcha;
+    }
     postData = querystring.stringify(postData);
     var request = http.request(httpRequestOptions, function (response) {
         var body = '';
@@ -472,7 +613,7 @@ const decode = function (base64, options, callback) {
                 }
                 if (this.options.retries > 1) {
                     this.options.retries = this.options.retries - 1;
-                    decode(base64, this.options, callback);
+                    decodeReCaptcha(captchaMethod, captcha, pageUrl, extraData, this.options, callback);
                 }
                 else {
                     callbackToInitialCallback('CAPTCHA_FAILED_TOO_MANY_TIMES');
@@ -480,52 +621,9 @@ const decode = function (base64, options, callback) {
             }, callback);
         });
     });
-    request.write(postData);
-    request.end();
-};
-const decodeReCaptcha = function (captcha, pageUrl, options, callback) {
-    if (!callback) {
-        callback = options;
-        options = defaultOptions;
-    }
-    var httpRequestOptions = url.parse(apiInUrl);
-    httpRequestOptions.method = 'POST';
-    var postData = {
-        method: apiMethodRecaptcha,
-        key: apiKey,
-        soft_id: SOFT_ID,
-        googlekey: captcha,
-        pageurl: pageUrl
-    };
-    postData = querystring.stringify(postData);
-    var request = http.request(httpRequestOptions, function (response) {
-        var body = '';
-        response.on('data', function (chunk) {
-            body += chunk;
-        });
-        response.on('end', function () {
-            var result = body.split('|');
-            if (result[0] !== 'OK') {
-                return callback(result[0]);
-            }
-            pollCaptcha(result[1], options, function (error) {
-                var callbackToInitialCallback = callback;
-                report(this.captchaId);
-                if (error) {
-                    return callbackToInitialCallback('CAPTCHA_FAILED');
-                }
-                if (!this.options.retries) {
-                    this.options.retries = defaultOptions.retries;
-                }
-                if (this.options.retries > 1) {
-                    this.options.retries = this.options.retries - 1;
-                    decode(captcha, this.options, callback);
-                }
-                else {
-                    callbackToInitialCallback('CAPTCHA_FAILED_TOO_MANY_TIMES');
-                }
-            }, callback);
-        });
+    request.on('error', function (e) {
+        request.destroy();
+        callback(e);
     });
     request.write(postData);
     request.end();
@@ -552,12 +650,16 @@ const report = function (captchaId) {
 const PROVIDER_ID = '2captcha';
 const debug = Debug__default['default'](`puppeteer-extra-plugin:recaptcha:${PROVIDER_ID}`);
 const secondsBetweenDates = (before, after) => (after.getTime() - before.getTime()) / 1000;
-async function decodeRecaptchaAsync(token, sitekey, url, opts = { pollingInterval: 2000 }) {
-    return new Promise(resolve => {
+async function decodeRecaptchaAsync(token, vendor, sitekey, url, extraData, opts = { pollingInterval: 2000 }) {
+    return new Promise((resolve) => {
         const cb = (err, result, invalid) => resolve({ err, result, invalid });
         try {
             setApiKey(token);
-            decodeReCaptcha(sitekey, url, opts, cb);
+            let method = 'userrecaptcha';
+            if (vendor === 'hcaptcha') {
+                method = 'hcaptcha';
+            }
+            decodeReCaptcha(method, sitekey, url, extraData, opts, cb);
         }
         catch (error) {
             return resolve({ err: error });
@@ -565,12 +667,13 @@ async function decodeRecaptchaAsync(token, sitekey, url, opts = { pollingInterva
     });
 }
 async function getSolutions(captchas = [], token) {
-    const solutions = await Promise.all(captchas.map(c => getSolution(c, token || '')));
-    return { solutions, error: solutions.find(s => !!s.error) };
+    const solutions = await Promise.all(captchas.map((c) => getSolution(c, token || '')));
+    return { solutions, error: solutions.find((s) => !!s.error) };
 }
 async function getSolution(captcha, token) {
     const solution = {
-        provider: PROVIDER_ID
+        _vendor: captcha._vendor,
+        provider: PROVIDER_ID,
     };
     try {
         if (!captcha || !captcha.sitekey || !captcha.url || !captcha.id) {
@@ -579,7 +682,11 @@ async function getSolution(captcha, token) {
         solution.id = captcha.id;
         solution.requestAt = new Date();
         debug('Requesting solution..', solution);
-        const { err, result, invalid } = await decodeRecaptchaAsync(token, captcha.sitekey, captcha.url);
+        const extraData = {};
+        if (captcha.s) {
+            extraData['data-s'] = captcha.s; // google site specific property
+        }
+        const { err, result, invalid } = await decodeRecaptchaAsync(token, captcha._vendor, captcha.sitekey, captcha.url, extraData);
         debug('Got response', { err, result, invalid });
         if (err)
             throw new Error(`${PROVIDER_ID} error: ${err}`);
@@ -602,8 +709,8 @@ async function getSolution(captcha, token) {
 const BuiltinSolutionProviders = [
     {
         id: PROVIDER_ID,
-        fn: getSolutions
-    }
+        fn: getSolutions,
+    },
 ];
 /**
  * A puppeteer-extra plugin to automatically detect and solve reCAPTCHAs.
@@ -620,23 +727,29 @@ class PuppeteerExtraPluginRecaptcha extends puppeteerExtraPlugin.PuppeteerExtraP
     get defaults() {
         return {
             visualFeedback: true,
-            throwOnError: false
+            throwOnError: false,
         };
     }
     get contentScriptOpts() {
         const { visualFeedback } = this.opts;
         return {
-            visualFeedback
+            visualFeedback,
         };
     }
-    _generateContentScript(fn, data) {
-        this.debug('_generateContentScript', fn, data);
+    _generateContentScript(vendor, fn, data) {
+        this.debug('_generateContentScript', vendor, fn, data);
+        let scriptSource = RecaptchaContentScript.toString();
+        let scriptName = 'RecaptchaContentScript';
+        if (vendor === 'hcaptcha') {
+            scriptSource = HcaptchaContentScript.toString();
+            scriptName = 'HcaptchaContentScript';
+        }
         return `(async() => {
       const DATA = ${JSON.stringify(data || null)}
       const OPTS = ${JSON.stringify(this.contentScriptOpts)}
 
-      ${RecaptchaContentScript.toString()}
-      const script = new RecaptchaContentScript(OPTS, DATA)
+      ${scriptSource}
+      const script = new ${scriptName}(OPTS, DATA)
       return script.${fn}()
     })()`;
     }
@@ -655,9 +768,24 @@ class PuppeteerExtraPluginRecaptcha extends puppeteerExtraPlugin.PuppeteerExtraP
       `, { polling: 200, timeout: 10 * 1000 });
             this.debug('waitForRecaptchaClient - end', new Date()); // used as timer
         }
+        const hasHcaptchaScriptTag = await page.$(`script[src*="//hcaptcha.com/1/api.js"]`);
+        this.debug('hasHcaptchaScriptTag', !!hasHcaptchaScriptTag);
+        if (hasHcaptchaScriptTag) {
+            this.debug('wait:hasHcaptchaScriptTag - start', new Date());
+            await page.waitForFunction(`
+        (function() {
+          return window.hcaptcha
+        })()
+      `, { polling: 200, timeout: 10 * 1000 });
+            this.debug('wait:hasHcaptchaScriptTag - end', new Date()); // used as timer
+        }
         // Even without a recaptcha script tag we're trying, just in case.
-        const evaluateReturn = await page.evaluate(this._generateContentScript('findRecaptchas'));
-        const response = evaluateReturn;
+        const resultRecaptcha = (await page.evaluate(this._generateContentScript('recaptcha', 'findRecaptchas')));
+        const resultHcaptcha = (await page.evaluate(this._generateContentScript('hcaptcha', 'findRecaptchas')));
+        const response = {
+            captchas: [...resultRecaptcha.captchas, ...resultHcaptcha.captchas],
+            error: resultRecaptcha.error || resultHcaptcha.error,
+        };
         this.debug('findRecaptchas', response);
         if (this.opts.throwOnError && response.error) {
             throw new Error(response.error);
@@ -674,7 +802,7 @@ class PuppeteerExtraPluginRecaptcha extends puppeteerExtraPlugin.PuppeteerExtraP
         }
         let fn = provider.fn;
         if (!fn) {
-            const builtinProvider = BuiltinSolutionProviders.find(p => p.id === (provider || {}).id);
+            const builtinProvider = BuiltinSolutionProviders.find((p) => p.id === (provider || {}).id);
             if (!builtinProvider || !builtinProvider.fn) {
                 throw new Error(`Cannot find builtin provider with id '${provider.id}'.`);
             }
@@ -693,37 +821,48 @@ class PuppeteerExtraPluginRecaptcha extends puppeteerExtraPlugin.PuppeteerExtraP
         }
         return response;
     }
-    async enterRecaptchaSolutions(page, solutions, captchasAttempted) {
-        this.debug('enterRecaptchaSolutions');
-        const evaluateReturn = await page.evaluate(this._generateContentScript('enterRecaptchaSolutions', {
-            solutions,
-            captchasAttempted
-        }));
-        const response = evaluateReturn;
-        response.error = response.error || response.solved.find(s => !!s.error);
+    async enterRecaptchaSolutions(page, solutions) {
+        this.debug('enterRecaptchaSolutions', { solutions });
+        const hasRecaptcha = !!solutions.find((s) => s._vendor === 'recaptcha');
+        const solvedRecaptcha = hasRecaptcha
+            ? (await page.evaluate(this._generateContentScript('recaptcha', 'enterRecaptchaSolutions', {
+                solutions,
+            })))
+            : { solved: [] };
+        const hasHcaptcha = !!solutions.find((s) => s._vendor === 'hcaptcha');
+        const solvedHcaptcha = hasHcaptcha
+            ? (await page.evaluate(this._generateContentScript('hcaptcha', 'enterRecaptchaSolutions', {
+                solutions,
+            })))
+            : { solved: [] };
+        const response = {
+            solved: [...solvedRecaptcha.solved, ...solvedHcaptcha.solved],
+            error: solvedRecaptcha.error || solvedHcaptcha.error,
+        };
+        response.error = response.error || response.solved.find((s) => !!s.error);
         this.debug('enterRecaptchaSolutions', response);
         if (this.opts.throwOnError && response.error) {
             throw new Error(response.error);
         }
         return response;
     }
-    async solveRecaptchas(page, options = {}) {
+    async solveRecaptchas(page) {
         this.debug('solveRecaptchas');
         const response = {
             captchas: [],
             solutions: [],
             solved: [],
-            error: null
+            error: null,
         };
         try {
             // If `this.opts.throwOnError` is set any of the
             // following will throw and abort execution.
             const { captchas, error: captchasError } = await this.findRecaptchas(page);
-            response.captchas = options.filterFoundRecaptchas ? options.filterFoundRecaptchas(captchas) : captchas;
+            response.captchas = captchas;
             if (captchas.length) {
-                const { solutions, error: solutionsError } = await this.getRecaptchaSolutions(response.captchas);
+                const { solutions, error: solutionsError, } = await this.getRecaptchaSolutions(response.captchas);
                 response.solutions = solutions;
-                const { solved, error: solvedError } = await this.enterRecaptchaSolutions(page, response.solutions, response.captchas);
+                const { solved, error: solvedError, } = await this.enterRecaptchaSolutions(page, response.solutions);
                 response.solved = solved;
                 response.error = captchasError || solutionsError || solvedError;
             }
@@ -740,9 +879,9 @@ class PuppeteerExtraPluginRecaptcha extends puppeteerExtraPlugin.PuppeteerExtraP
     _addCustomMethods(prop) {
         prop.findRecaptchas = async () => this.findRecaptchas(prop);
         prop.getRecaptchaSolutions = async (captchas, provider) => this.getRecaptchaSolutions(captchas, provider);
-        prop.enterRecaptchaSolutions = async (solutions) => this.enterRecaptchaSolutions(prop, solutions, false);
+        prop.enterRecaptchaSolutions = async (solutions) => this.enterRecaptchaSolutions(prop, solutions);
         // Add convenience methods that wraps all others
-        prop.solveRecaptchas = async (options = {}) => this.solveRecaptchas(prop, options);
+        prop.solveRecaptchas = async () => this.solveRecaptchas(prop);
     }
     async onPageCreated(page) {
         this.debug('onPageCreated', page.url());
@@ -751,7 +890,7 @@ class PuppeteerExtraPluginRecaptcha extends puppeteerExtraPlugin.PuppeteerExtraP
         // Add custom page methods
         this._addCustomMethods(page);
         // Add custom methods to potential frames as well
-        page.on('frameattached', frame => {
+        page.on('frameattached', (frame) => {
             if (!frame)
                 return;
             this._addCustomMethods(frame);

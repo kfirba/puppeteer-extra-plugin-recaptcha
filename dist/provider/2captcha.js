@@ -29,12 +29,16 @@ const debug = debug_1.default(`puppeteer-extra-plugin:recaptcha:${exports.PROVID
 // const solver = require('./2captcha-api')
 const solver = __importStar(require("./2captcha-api"));
 const secondsBetweenDates = (before, after) => (after.getTime() - before.getTime()) / 1000;
-async function decodeRecaptchaAsync(token, sitekey, url, opts = { pollingInterval: 2000 }) {
-    return new Promise(resolve => {
+async function decodeRecaptchaAsync(token, vendor, sitekey, url, extraData, opts = { pollingInterval: 2000 }) {
+    return new Promise((resolve) => {
         const cb = (err, result, invalid) => resolve({ err, result, invalid });
         try {
             solver.setApiKey(token);
-            solver.decodeReCaptcha(sitekey, url, opts, cb);
+            let method = 'userrecaptcha';
+            if (vendor === 'hcaptcha') {
+                method = 'hcaptcha';
+            }
+            solver.decodeReCaptcha(method, sitekey, url, extraData, opts, cb);
         }
         catch (error) {
             return resolve({ err: error });
@@ -42,13 +46,14 @@ async function decodeRecaptchaAsync(token, sitekey, url, opts = { pollingInterva
     });
 }
 async function getSolutions(captchas = [], token) {
-    const solutions = await Promise.all(captchas.map(c => getSolution(c, token || '')));
-    return { solutions, error: solutions.find(s => !!s.error) };
+    const solutions = await Promise.all(captchas.map((c) => getSolution(c, token || '')));
+    return { solutions, error: solutions.find((s) => !!s.error) };
 }
 exports.getSolutions = getSolutions;
 async function getSolution(captcha, token) {
     const solution = {
-        provider: exports.PROVIDER_ID
+        _vendor: captcha._vendor,
+        provider: exports.PROVIDER_ID,
     };
     try {
         if (!captcha || !captcha.sitekey || !captcha.url || !captcha.id) {
@@ -57,7 +62,11 @@ async function getSolution(captcha, token) {
         solution.id = captcha.id;
         solution.requestAt = new Date();
         debug('Requesting solution..', solution);
-        const { err, result, invalid } = await decodeRecaptchaAsync(token, captcha.sitekey, captcha.url);
+        const extraData = {};
+        if (captcha.s) {
+            extraData['data-s'] = captcha.s; // google site specific property
+        }
+        const { err, result, invalid } = await decodeRecaptchaAsync(token, captcha._vendor, captcha.sitekey, captcha.url, extraData);
         debug('Got response', { err, result, invalid });
         if (err)
             throw new Error(`${exports.PROVIDER_ID} error: ${err}`);

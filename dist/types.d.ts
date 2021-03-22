@@ -10,17 +10,13 @@ declare global {
         };
     }
 }
-export declare type CaptchasCallback = (c: CaptchaInfo[]) => CaptchaInfo[];
-export interface SolveRecaptchasOptions {
-    filterFoundRecaptchas?: CaptchasCallback;
-}
 export declare type RecaptchaPluginPageAdditions = {
     /** Attempt to find all reCAPTCHAs on this page. */
     findRecaptchas: () => Promise<FindRecaptchasResult>;
     getRecaptchaSolutions: (captchas: CaptchaInfo[], provider?: SolutionProvider) => Promise<GetSolutionsResult>;
     enterRecaptchaSolutions: (solutions: CaptchaSolution[]) => Promise<EnterRecaptchaSolutionsResult>;
     /** Attempt to detect and solve reCAPTCHAs on this page automatically. 🔮 */
-    solveRecaptchas: (options: SolveRecaptchasOptions) => Promise<SolveRecaptchasResult>;
+    solveRecaptchas: () => Promise<SolveRecaptchasResult>;
 };
 export interface SolutionProvider {
     id?: string;
@@ -40,10 +36,13 @@ export interface GetSolutionsResult {
     error?: any;
 }
 export declare type SolveRecaptchasResult = FindRecaptchasResult & EnterRecaptchaSolutionsResult & GetSolutionsResult;
+export declare type CaptchaVendor = 'recaptcha' | 'hcaptcha';
 export interface CaptchaInfo {
+    _vendor: CaptchaVendor;
     id?: string;
     widgetId?: number;
     sitekey?: string;
+    s?: string;
     callback?: string | Function;
     hasResponseElement?: boolean;
     url?: string;
@@ -57,6 +56,7 @@ export interface CaptchaInfo {
     };
 }
 export interface CaptchaSolution {
+    _vendor: CaptchaVendor;
     id?: string;
     provider?: string;
     providerCaptchaId?: string;
@@ -68,6 +68,7 @@ export interface CaptchaSolution {
     hasSolution?: boolean;
 }
 export interface CaptchaSolved {
+    _vendor: CaptchaVendor;
     id?: string;
     responseElement?: boolean;
     responseCallback?: boolean;
@@ -85,5 +86,4 @@ export interface ContentScriptOpts {
 }
 export interface ContentScriptData {
     solutions?: CaptchaSolution[];
-    captchasAttempted?: CaptchaInfo[] | false;
 }
