@@ -29,8 +29,12 @@ const debug = debug_1.default(`puppeteer-extra-plugin:recaptcha:${exports.PROVID
 // const solver = require('./2captcha-api')
 const solver = __importStar(require("./2captcha-api"));
 const secondsBetweenDates = (before, after) => (after.getTime() - before.getTime()) / 1000;
+const providerOptsDefaults = {
+    useEnterpriseFlag: false,
+    useActionValue: true
+};
 async function decodeRecaptchaAsync(token, vendor, sitekey, url, extraData, opts = { pollingInterval: 2000 }) {
-    return new Promise((resolve) => {
+    return new Promise(resolve => {
         const cb = (err, result, invalid) => resolve({ err, result, invalid });
         try {
             solver.setApiKey(token);
@@ -45,15 +49,16 @@ async function decodeRecaptchaAsync(token, vendor, sitekey, url, extraData, opts
         }
     });
 }
-async function getSolutions(captchas = [], token) {
-    const solutions = await Promise.all(captchas.map((c) => getSolution(c, token || '')));
-    return { solutions, error: solutions.find((s) => !!s.error) };
+async function getSolutions(captchas = [], token = '', opts = {}) {
+    opts = Object.assign(Object.assign({}, providerOptsDefaults), opts);
+    const solutions = await Promise.all(captchas.map(c => getSolution(c, token, opts)));
+    return { solutions, error: solutions.find(s => !!s.error) };
 }
 exports.getSolutions = getSolutions;
-async function getSolution(captcha, token) {
+async function getSolution(captcha, token, opts) {
     const solution = {
         _vendor: captcha._vendor,
-        provider: exports.PROVIDER_ID,
+        provider: exports.PROVIDER_ID
     };
     try {
         if (!captcha || !captcha.sitekey || !captcha.url || !captcha.id) {
@@ -65,6 +70,12 @@ async function getSolution(captcha, token) {
         const extraData = {};
         if (captcha.s) {
             extraData['data-s'] = captcha.s; // google site specific property
+        }
+        if (opts.useActionValue && captcha.action) {
+            extraData['action'] = captcha.action; // Optional v3/enterprise action
+        }
+        if (opts.useEnterpriseFlag && captcha.isEnterprise) {
+            extraData['enterprise'] = 1;
         }
         const { err, result, invalid } = await decodeRecaptchaAsync(token, captcha._vendor, captcha.sitekey, captcha.url, extraData);
         debug('Got response', { err, result, invalid });

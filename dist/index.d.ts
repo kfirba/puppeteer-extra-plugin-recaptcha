@@ -7,17 +7,22 @@ export declare const BuiltinSolutionProviders: types.SolutionProvider[];
  * @noInheritDoc
  */
 export declare class PuppeteerExtraPluginRecaptcha extends PuppeteerExtraPlugin {
+    opts: types.PluginOptions;
+    private contentScriptDebug;
     constructor(opts: Partial<types.PluginOptions>);
     get name(): string;
     get defaults(): types.PluginOptions;
     get contentScriptOpts(): types.ContentScriptOpts;
+    /** An optional global window object we use for contentscript debug logging */
+    private debugBindingName;
     private _generateContentScript;
+    /** Based on the user defined options we may want to filter out certain captchas (inactive, etc) */
+    private _filterRecaptchas;
     findRecaptchas(page: Page | Frame): Promise<types.FindRecaptchasResult>;
     getRecaptchaSolutions(captchas: types.CaptchaInfo[], provider?: types.SolutionProvider): Promise<any>;
     enterRecaptchaSolutions(page: Page | Frame, solutions: types.CaptchaSolution[]): Promise<types.EnterRecaptchaSolutionsResult>;
     solveRecaptchas(page: Page | Frame): Promise<types.SolveRecaptchasResult>;
     private _addCustomMethods;
-    _addCustomMethodsToPage(page: Page): void;
     onPageCreated(page: Page): Promise<void>;
     /** Add additions to already existing pages and frames */
     onBrowser(browser: Browser): Promise<void>;

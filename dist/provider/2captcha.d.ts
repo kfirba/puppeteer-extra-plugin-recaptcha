@@ -5,4 +5,8 @@ export interface DecodeRecaptchaAsyncResult {
     result?: any;
     invalid?: any;
 }
-export declare function getSolutions(captchas?: types.CaptchaInfo[], token?: string): Promise<types.GetSolutionsResult>;
+export interface TwoCaptchaProviderOpts {
+    useEnterpriseFlag?: boolean;
+    useActionValue?: boolean;
+}
+export declare function getSolutions(captchas?: types.CaptchaInfo[], token?: string, opts?: TwoCaptchaProviderOpts): Promise<types.GetSolutionsResult>;

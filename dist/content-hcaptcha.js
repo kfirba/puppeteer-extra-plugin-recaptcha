@@ -13,7 +13,7 @@ exports.ContentScriptDefaultData = {
  */
 class HcaptchaContentScript {
     constructor(opts = exports.ContentScriptDefaultOpts, data = exports.ContentScriptDefaultData) {
-        this.baseUrl = 'https://assets.hcaptcha.com/captcha/v1/';
+        this.baseUrl = 'assets.hcaptcha.com/captcha/v1/';
         this.opts = opts;
         this.data = data;
     }
@@ -46,12 +46,12 @@ class HcaptchaContentScript {
     }
     /** Regular checkboxes */
     _findRegularCheckboxes() {
-        const nodeList = document.querySelectorAll(`iframe[src^='${this.baseUrl}'][data-hcaptcha-widget-id]:not([src*='invisible'])`);
+        const nodeList = document.querySelectorAll(`iframe[src*='${this.baseUrl}'][data-hcaptcha-widget-id]:not([src*='invisible'])`);
         return Array.from(nodeList);
     }
     /** Find active challenges from invisible hcaptchas */
     _findActiveChallenges() {
-        const nodeList = document.querySelectorAll(`div[style*='visible'] iframe[src^='${this.baseUrl}'][src*='hcaptcha-challenge.html'][src*='invisible']`);
+        const nodeList = document.querySelectorAll(`div[style*='visible'] iframe[src*='${this.baseUrl}'][src*='hcaptcha-challenge.html'][src*='invisible']`);
         return Array.from(nodeList);
     }
     _extractInfoFromIframes(iframes) {
