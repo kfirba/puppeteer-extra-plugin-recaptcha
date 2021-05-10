@@ -331,26 +331,30 @@ export class PuppeteerExtraPluginRecaptcha extends PuppeteerExtraPlugin {
     prop.solveRecaptchas = async () => this.solveRecaptchas(prop)
   }
 
+  _addCustomMethodsToPage(page: Page) {
+    // Add custom page methods
+    this._addCustomMethods(page)
+
+    // Add custom methods to potential frames as well
+    page.on('frameattached', (frame) => {
+      if (!frame) return
+      this._addCustomMethods(frame)
+    })
+  }
+
   async onPageCreated(page: Page) {
     this.debug('onPageCreated', page.url())
     // Make sure we can run our content script
     await page.setBypassCSP(true)
 
-    // Add custom page methods
-    this._addCustomMethods(page)
-
-    // Add custom methods to potential frames as well
-    page.on('frameattached', frame => {
-      if (!frame) return
-      this._addCustomMethods(frame)
-    })
+    this._addCustomMethodsToPage(page)
   }
 
   /** Add additions to already existing pages and frames */
   async onBrowser(browser: Browser) {
     const pages = await browser.pages()
     for (const page of pages) {
-      this._addCustomMethods(page)
+      this._addCustomMethodsToPage(page)
       for (const frame of page.mainFrame().childFrames()) {
         this._addCustomMethods(frame)
       }
