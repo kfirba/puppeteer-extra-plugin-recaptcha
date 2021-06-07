@@ -159,12 +159,15 @@ export class PuppeteerExtraPluginRecaptcha extends PuppeteerExtraPlugin {
     const onDebugBindingCalled = (message: string, data: any) => {
       this.contentScriptDebug(message, data)
     }
-
-    if (this.contentScriptDebug.enabled) {
-      if ('exposeFunction' in page) {
-        await page.exposeFunction(this.debugBindingName, onDebugBindingCalled)
-      }
-    }
+    
+    // comment this part for now because it breaks Etsy integration
+    
+    //     if (this.contentScriptDebug.enabled) {
+    //       if ('exposeFunction' in page) {
+    //         await page.exposeFunction(this.debugBindingName, onDebugBindingCalled)
+    //       }
+    //     }
+    
     // Even without a recaptcha script tag we're trying, just in case.
     const resultRecaptcha: types.FindRecaptchasResult = (await page.evaluate(
       this._generateContentScript('recaptcha', 'findRecaptchas')
