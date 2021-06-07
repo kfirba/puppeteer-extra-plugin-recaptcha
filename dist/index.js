@@ -141,14 +141,15 @@ class PuppeteerExtraPluginRecaptcha extends puppeteer_extra_plugin_1.PuppeteerEx
       `, { polling: 200, timeout: 10 * 1000 });
             this.debug('wait:hasHcaptchaScriptTag - end', new Date()); // used as timer
         }
-        const onDebugBindingCalled = (message, data) => {
-            this.contentScriptDebug(message, data);
-        };
-        if (this.contentScriptDebug.enabled) {
-            if ('exposeFunction' in page) {
-                await page.exposeFunction(this.debugBindingName, onDebugBindingCalled);
-            }
-        }
+        // comment this part for now because it breaks Etsy integration
+        // const onDebugBindingCalled = (message: string, data: any) => {
+        //   this.contentScriptDebug(message, data)
+        // }
+        //     if (this.contentScriptDebug.enabled) {
+        //       if ('exposeFunction' in page) {
+        //         await page.exposeFunction(this.debugBindingName, onDebugBindingCalled)
+        //       }
+        //     }
         // Even without a recaptcha script tag we're trying, just in case.
         const resultRecaptcha = (await page.evaluate(this._generateContentScript('recaptcha', 'findRecaptchas')));
         const resultHcaptcha = (await page.evaluate(this._generateContentScript('hcaptcha', 'findRecaptchas')));
